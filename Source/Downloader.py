@@ -22,7 +22,8 @@ DEFAULT_CONFIG = {
     "max_downloads": 5,
     "enable_logging": True,
     "auto_retry": True,
-    "max_retries": 3
+    "max_retries": 3,
+    "quiet_mode": True
 }
 
 def load_config():
@@ -104,8 +105,9 @@ def print_settings_menu():
     print("1. 📂 Change Download Folder")
     print("2. 🔄 Auto-retry Failed Downloads")
     print("3. 📝 Enable/Disable Logging")
-    print("4. 🧹 Clear Download History")
-    print("5. ↩️  Back to Main Menu")
+    print("4. 🔕 Toggle Quiet Mode")
+    print("5. 🧹 Clear Download History")
+    print("6. ↩️  Back to Main Menu")
     print("═" * 55)
 
 def mode_text(mode):
@@ -182,19 +184,46 @@ def show_download_history():
     except Exception as e:
         print(f"\n❌ Error loading history: {e}")
 
-def get_video_info(url):
-    """Get video information without downloading"""
+def get_url_info(url, config):
+    """Get video/playlist information without downloading"""
     try:
-        with YoutubeDL({'quiet': True}) as ydl:
+        ydl_opts = {
+            'quiet': config.get('quiet_mode', True),
+            'no_warnings': False,
+        }
+        
+        with YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
-            return {
-                'title': info.get('title', 'Unknown'),
-                'duration': info.get('duration', 0),
-                'uploader': info.get('uploader', 'Unknown'),
-                'view_count': info.get('view_count', 0),
-                'upload_date': info.get('upload_date', 'Unknown')
-            }
-    except Exception:
+            
+            # Check if it's a playlist
+            if 'entries' in info:
+                # It's a playlist
+                playlist_info = {
+                    'type': 'playlist',
+                    'title': info.get('title', 'Unknown Playlist'),
+                    'uploader': info.get('uploader', 'Unknown'),
+                    'video_count': len(info['entries']) if info.get('entries') else 0,
+                    'videos': []
+                }
+                
+                # Get first few video titles
+                for i, entry in enumerate(info['entries'][:5]):
+                    if entry:
+                        playlist_info['videos'].append(entry.get('title', f'Video {i+1}'))
+                
+                return playlist_info
+            else:
+                # It's a single video
+                return {
+                    'type': 'video',
+                    'title': info.get('title', 'Unknown'),
+                    'duration': info.get('duration', 0),
+                    'uploader': info.get('uploader', 'Unknown'),
+                    'view_count': info.get('view_count', 0),
+                    'upload_date': info.get('upload_date', 'Unknown')
+                }
+    except Exception as e:
+        print(f"❌ Error fetching URL info: {e}")
         return None
 
 def format_duration(seconds):
@@ -209,10 +238,10 @@ def format_duration(seconds):
     else:
         return f"{minutes:02d}:{seconds:02d}"
 
-def progress_hook(info):
+def progress_hook(info, config):
     """Enhanced progress hook with detailed information"""
-    if info["status"] == "downloading":
-        # Show download progress if available
+    if info["status"] == "downloading" and not config.get('quiet_mode', True):
+        # Show download progress if available and not in quiet mode
         if '_percent_str' in info:
             percent = info['_percent_str'].strip()
             speed = info.get('_speed_str', 'N/A').strip()
@@ -242,31 +271,36 @@ def progress_hook(info):
             print("\n✅ Download Completed Successfully")
             print("📂 File saved: Unknown (check download folder)\n")
 
-def download(url, mode, config, retry_count=0):
-    """Enhanced download function with retry logic"""
-    ydl_opts = {
-        "outtmpl": os.path.join(DOWNLOAD_DIR, "%(title)s.%(ext)s"),
-        "progress_hooks": [progress_hook],
-        "noplaylist": True,
-        "quiet": True,
-        "no_warnings": False,
-    }
-
+def download_content(url, mode, config, retry_count=0):
+    """Universal download function that handles both single videos and playlists"""
+    
+    # Base ydl options
     if mode == "1":
-        ydl_opts.update({
+        # Video mode
+        ydl_opts = {
+            "outtmpl": os.path.join(DOWNLOAD_DIR, "%(title)s.%(ext)s"),
             "format": "bestvideo+bestaudio/best",
             "merge_output_format": "mp4",
-        })
+            "progress_hooks": [lambda info: progress_hook(info, config)],
+            "quiet": config.get('quiet_mode', True),
+            "no_warnings": config.get('quiet_mode', True),
+        }
     elif mode == "2":
-        ydl_opts.update({
+        # MP3 mode
+        ydl_opts = {
+            "outtmpl": os.path.join(DOWNLOAD_DIR, "%(title)s.%(ext)s"),
             "format": "bestaudio/best",
             "postprocessors": [{
                 "key": "FFmpegExtractAudio",
                 "preferredcodec": "mp3",
                 "preferredquality": "320",
-            }]
-        })
+            }],
+            "progress_hooks": [lambda info: progress_hook(info, config)],
+            "quiet": config.get('quiet_mode', True),
+            "no_warnings": config.get('quiet_mode', True),
+        }
     elif mode == "3":
+        # Manual format selection
         try:
             print("\n📋 Fetching available formats...")
             with YoutubeDL({"listformats": True, "quiet": True}) as ydl:
@@ -276,33 +310,71 @@ def download(url, mode, config, retry_count=0):
             if not fmt:
                 print("❌ No format ID entered")
                 return
-            ydl_opts.update({"format": fmt})
+            
+            ydl_opts = {
+                "outtmpl": os.path.join(DOWNLOAD_DIR, "%(title)s.%(ext)s"),
+                "format": fmt,
+                "progress_hooks": [lambda info: progress_hook(info, config)],
+                "quiet": config.get('quiet_mode', True),
+                "no_warnings": config.get('quiet_mode', True),
+            }
         except Exception as e:
             print(f"❌ Failed to fetch formats: {e}")
             return
 
     try:
-        # Show video info before downloading
-        print("\n🔍 Fetching video information...")
-        video_info = get_video_info(url)
-        if video_info:
-            print("\n" + "─" * 50)
-            print("📹 VIDEO INFORMATION")
-            print("─" * 50)
-            print(f"📺 Title: {video_info['title']}")
-            print(f"👤 Channel: {video_info['uploader']}")
-            print(f"⏱️ Duration: {format_duration(video_info['duration'])}")
-            print(f"👀 Views: {video_info['view_count']:,}")
-            print(f"📅 Upload date: {video_info['upload_date']}")
-            print("─" * 50)
+        # Show content info before downloading
+        print("\n🔍 Fetching information...")
+        url_info = get_url_info(url, config)
+        
+        if url_info:
+            if url_info['type'] == 'playlist':
+                print("\n" + "─" * 50)
+                print("📂 PLAYLIST INFORMATION")
+                print("─" * 50)
+                print(f"📺 Playlist: {url_info['title']}")
+                print(f"👤 Channel: {url_info['uploader']}")
+                print(f"🎬 Total Videos: {url_info['video_count']}")
+                print(f"📥 Mode: {mode_text(mode)}")
+                print("\n📹 First few videos:")
+                for i, video_title in enumerate(url_info['videos'], 1):
+                    print(f"  {i}. {video_title}")
+                print("─" * 50)
+                
+                # Update output template for playlists
+                if mode == "1":
+                    ydl_opts["outtmpl"] = os.path.join(DOWNLOAD_DIR, "%(playlist_title)s", "%(title)s.%(ext)s")
+                elif mode == "2":
+                    ydl_opts["outtmpl"] = os.path.join(DOWNLOAD_DIR, "%(playlist_title)s", "%(title)s.%(ext)s")
+                
+                confirm = input(f"\n🚀 Download {url_info['video_count']} videos as {mode_text(mode).upper()}? (y/n): ").lower().strip()
+                if confirm != 'y':
+                    print("❌ Download cancelled.")
+                    return
+                    
+            else:
+                # Single video
+                print("\n" + "─" * 50)
+                print("📹 VIDEO INFORMATION")
+                print("─" * 50)
+                print(f"📺 Title: {url_info['title']}")
+                print(f"👤 Channel: {url_info['uploader']}")
+                print(f"⏱️ Duration: {format_duration(url_info['duration'])}")
+                print(f"👀 Views: {url_info['view_count']:,}")
+                print(f"📅 Upload date: {url_info['upload_date']}")
+                print(f"📥 Mode: {mode_text(mode)}")
+                print("─" * 50)
         
         start_spinner()
         with YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
-            filename = ydl.prepare_filename(info)
             
             # Log successful download
-            log_download(url, os.path.basename(filename), mode, "Success")
+            if url_info and url_info['type'] == 'playlist':
+                log_download(url, f"Playlist: {url_info['title']} ({mode_text(mode)})", mode, "Success")
+            else:
+                filename = ydl.prepare_filename(info) if 'prepare_filename' in dir(ydl) else "Unknown"
+                log_download(url, os.path.basename(filename), mode, "Success")
             
     except Exception as e:
         stop_spinner()
@@ -310,17 +382,21 @@ def download(url, mode, config, retry_count=0):
         print(f"\n❌ Download Error: {error_msg}")
         
         # Log failed download
-        log_download(url, "Unknown", mode, f"Failed: {error_msg}")
+        url_info = get_url_info(url, config)
+        if url_info and url_info['type'] == 'playlist':
+            log_download(url, f"Playlist: {url_info.get('title', 'Unknown')}", mode, f"Failed: {error_msg}")
+        else:
+            log_download(url, "Unknown", mode, f"Failed: {error_msg}")
         
         if config.get('auto_retry', True) and retry_count < config.get('max_retries', 3):
             retry_count += 1
             print(f"🔄 Retrying... Attempt {retry_count} of {config.get('max_retries', 3)}")
             time.sleep(2)
-            download(url, mode, config, retry_count)
+            download_content(url, mode, config, retry_count)
         else:
             retry = input("\n🔄 Retry download? (y/n): ").lower().strip()
             if retry == 'y':
-                download(url, mode, config)
+                download_content(url, mode, config)
 
 def change_download_folder():
     """Change the download folder"""
@@ -360,7 +436,7 @@ def settings_menu(config):
         print_banner()
         print_settings_menu()
         
-        choice = input("Select an option (1-5): ").strip()
+        choice = input("Select an option (1-6): ").strip()
         
         if choice == "1":
             change_download_folder()
@@ -377,6 +453,12 @@ def settings_menu(config):
             status = "enabled" if logging_enabled else "disabled"
             print(f"✅ Logging {status}")
         elif choice == "4":
+            quiet_mode = not config.get('quiet_mode', True)
+            config['quiet_mode'] = quiet_mode
+            save_config(config)
+            status = "enabled" if quiet_mode else "disabled"
+            print(f"✅ Quiet mode {status}")
+        elif choice == "5":
             confirm = input("🧹 Are you sure you want to clear download history? (y/n): ").lower()
             if confirm == 'y':
                 log_file = os.path.join(os.path.dirname(CONFIG_FILE), "download_history.json")
@@ -386,10 +468,10 @@ def settings_menu(config):
                     print("✅ Download history cleared.")
                 except Exception as e:
                     print(f"❌ Error clearing history: {e}")
-        elif choice == "5":
+        elif choice == "6":
             break
         else:
-            print("❌ Invalid choice. Please select 1-5.")
+            print("❌ Invalid choice. Please select 1-6.")
         
         input("\nPress Enter to continue...")
 
@@ -409,10 +491,10 @@ def main():
         print_menu()
         choice = input("Select an option (1-6): ").strip()
         
-        if choice == "1" or choice == "2" or choice == "3":
+        if choice in ["1", "2", "3"]:
             # Download modes
             while True:
-                prompt = f"\n🎯 Enter YouTube link to download {mode_text(choice)} (or '0' to change mode): "
+                prompt = f"\n🎯 Enter YouTube link (video or playlist) to download {mode_text(choice)} (or '0' to change mode): "
                 url = input(prompt).strip()
                 
                 if url == "0":
@@ -426,7 +508,7 @@ def main():
                     print("❌ Please enter a valid YouTube URL")
                     continue
                     
-                download(url, choice, config)
+                download_content(url, choice, config)
                 
                 again = input("\n📥 Download another file? (y/n): ").lower().strip()
                 if again != "y":
