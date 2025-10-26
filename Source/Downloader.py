@@ -20,9 +20,7 @@ if os.name == 'nt':  # Windows
 elif sys.platform == 'darwin':  # macOS
     DEFAULT_DOWNLOAD_DIR = os.path.join(os.path.expanduser("~"), "Downloads", "PRO_Youtube_Downloader")
 else:  # Linux, Android, iOS and others
-    # For all other platforms, create app folder in user's home directory
-    # This is safe for iOS sandbox and works well on Linux/Android
-    DEFAULT_DOWNLOAD_DIR = os.path.join(os.path.expanduser("~"), "PRO_Youtube_Downloader")
+    DEFAULT_DOWNLOAD_DIR = BASE_DIR
 
 DOWNLOAD_DIR = DEFAULT_DOWNLOAD_DIR
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
