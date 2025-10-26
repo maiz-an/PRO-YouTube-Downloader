@@ -1,13 +1,13 @@
 # PRO YouTube Downloader 🎥➡️💾
 
-A professional, BOT-powered YouTube downloader with an intuitive console interface that automatically handles all dependencies and setup requirements.
+A BOT-powered YouTube downloader with an intuitive console interface that automatically handles all dependencies and setup requirements.
 
 ![YouTube Downloader](https://img.shields.io/badge/YouTube-Downloader-red) ![Python](https://img.shields.io/badge/Python-3.6%2B-blue) ![FFmpeg](https://img.shields.io/badge/FFmpeg-Required-green) ![Windows](https://img.shields.io/badge/Platform-Windows-lightgrey)
 
 ## ✨ Features
 
 - **🎯 Smart Auto-Setup**: BOT-powered dependency installation
-- **📥 Multiple Download Modes**:
+- **📥 Multiple Download Modes (also playlist)**:
   - 🎬 **Video**: Best quality MP4 download
   - 🎵 **Audio**: High-quality MP3 (320kbps)
   - 🔧 **Manual**: Custom format selection
