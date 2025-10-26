@@ -101,20 +101,33 @@ The `Run.bat` acts as your personal BOT assistant:
 ### Using the Downloader
 
 ```
-═══════════════════════════════════
-       PRO YT Downloader
-═══════════════════════════════════
-1. Download Video (Best Quality)
-2. Download Audio MP3 (320kbps)
-3. Manual Select Format
-═══════════════════════════════════
-📁 Download folder: %\Downloads
-═══════════════════════════════════
+╔══════════════════════════════════════════════╗
+║            🚀 PRO YT Downloader 🚀          ║
+║           Premium YouTube Downloader         ║
+╚══════════════════════════════════════════════╝
+
+✨ Welcome to PRO YouTube Downloader ✨
+📁 Download location: F:\MVs
+
+═══════════════════════════════════════════════════════
+            🎯 DOWNLOAD OPTIONS
+═══════════════════════════════════════════════════════
+1. 📹 Download Video (Best Quality)
+2. 🎵 Download Audio MP3 (320kbps)
+3. 🔧 Manual Select Format
+4. ⚙️  Settings
+5. 📊 Download History
+6. ❌ Exit
+═══════════════════════════════════════════════════════
+📁 Current Download Folder: F:\MVs
+═══════════════════════════════════════════════════════
+Select an option (1-6):
+
 ```
 
 ### Download Process
 
-1. **Select mode** (1, 2, or 3)
+1. **Select mode** (1, 2, . . . 6)
 2. **Paste YouTube URL** when prompted
 3. **Watch progress spinner**: `⏳ Downloading... |/-\`
 4. **Get completion message**: `✅ Download Completed Successfully`
