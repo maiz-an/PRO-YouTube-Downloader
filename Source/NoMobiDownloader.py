@@ -6,27 +6,12 @@ import json
 from datetime import datetime
 from yt_dlp import YoutubeDL
 
-# Cross-platform download directory setup
-if getattr(sys, 'frozen', False):
-    # Running as compiled executable
-    BASE_DIR = os.path.dirname(sys.executable)
-else:
-    # Running as script
-    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-
-# Platform-specific download directory
-if os.name == 'nt':  # Windows
-    DEFAULT_DOWNLOAD_DIR = os.path.join(BASE_DIR, "Downloads")
-elif sys.platform == 'darwin':  # macOS
-    DEFAULT_DOWNLOAD_DIR = os.path.join(os.path.expanduser("~"), "Downloads", "PRO_Youtube_Downloader")
-else:  # Linux, Android, iOS and others
-    DEFAULT_DOWNLOAD_DIR = os.path.join(os.path.expanduser("~"), "PRO_Youtube_Downloader", "Downloads")
-
-DOWNLOAD_DIR = DEFAULT_DOWNLOAD_DIR
+# Set DOWNLOAD_DIR to the Mainfolder/Downloads directory
+DOWNLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "Downloads")
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
 # Configuration file path
-CONFIG_FILE = os.path.join(BASE_DIR, "downloader_config.json")
+CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "downloader_config.json")
 
 spinner_running = False
 spinner_thread = None
@@ -45,7 +30,7 @@ def load_config():
     """Load configuration from file or create default"""
     try:
         if os.path.exists(CONFIG_FILE):
-            with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+            with open(CONFIG_FILE, 'r') as f:
                 return {**DEFAULT_CONFIG, **json.load(f)}
     except Exception:
         pass
@@ -54,8 +39,8 @@ def load_config():
 def save_config(config):
     """Save configuration to file"""
     try:
-        with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
-            json.dump(config, f, indent=4, ensure_ascii=False)
+        with open(CONFIG_FILE, 'w') as f:
+            json.dump(config, f, indent=4)
     except Exception:
         pass
 
@@ -84,11 +69,8 @@ def stop_spinner():
     sys.stdout.flush()
 
 def clear_screen():
-    """Clear the terminal screen - cross-platform"""
-    if os.name == 'nt':  # Windows
-        os.system('cls')
-    else:  # macOS, Linux, Android, iOS
-        os.system('clear')
+    """Clear the terminal screen"""
+    os.system('cls' if os.name == 'nt' else 'clear')
 
 def print_banner():
     """Print application banner"""
@@ -147,15 +129,15 @@ def log_download(url, filename, mode, status="Success"):
             "status": status
         }
         
-        log_file = os.path.join(BASE_DIR, "download_history.json")
+        log_file = os.path.join(os.path.dirname(CONFIG_FILE), "download_history.json")
         history = []
         
         if os.path.exists(log_file):
-            try:
-                with open(log_file, 'r', encoding='utf-8') as f:
+            with open(log_file, 'r') as f:
+                try:
                     history = json.load(f)
-            except:
-                history = []
+                except:
+                    history = []
         
         history.append(log_entry)
         
@@ -163,21 +145,21 @@ def log_download(url, filename, mode, status="Success"):
         if len(history) > 50:
             history = history[-50:]
         
-        with open(log_file, 'w', encoding='utf-8') as f:
-            json.dump(history, f, indent=2, ensure_ascii=False)
+        with open(log_file, 'w') as f:
+            json.dump(history, f, indent=2)
     except Exception:
         pass
 
 def show_download_history():
     """Display download history"""
-    log_file = os.path.join(BASE_DIR, "download_history.json")
+    log_file = os.path.join(os.path.dirname(CONFIG_FILE), "download_history.json")
     
     if not os.path.exists(log_file):
         print("\n❌ No download history found.")
         return
     
     try:
-        with open(log_file, 'r', encoding='utf-8') as f:
+        with open(log_file, 'r') as f:
             history = json.load(f)
         
         if not history:
@@ -207,7 +189,7 @@ def get_url_info(url, config):
     try:
         ydl_opts = {
             'quiet': config.get('quiet_mode', True),
-            'no_warnings': config.get('quiet_mode', True),
+            'no_warnings': False,
         }
         
         with YoutubeDL(ydl_opts) as ydl:
@@ -274,11 +256,8 @@ def progress_hook(info, config):
         if filepath != "Unknown":
             filepath = os.path.abspath(filepath)
             filename = os.path.basename(filepath)
-            try:
-                file_size = os.path.getsize(filepath) if os.path.exists(filepath) else 0
-                size_mb = file_size / (1024 * 1024)
-            except:
-                size_mb = 0
+            file_size = os.path.getsize(filepath) if os.path.exists(filepath) else 0
+            size_mb = file_size / (1024 * 1024)
             
             print("\n" + "═" * 55)
             print("            ✅ DOWNLOAD COMPLETED")
@@ -394,11 +373,8 @@ def download_content(url, mode, config, retry_count=0):
             if url_info and url_info['type'] == 'playlist':
                 log_download(url, f"Playlist: {url_info['title']} ({mode_text(mode)})", mode, "Success")
             else:
-                try:
-                    filename = ydl.prepare_filename(info)
-                    log_download(url, os.path.basename(filename), mode, "Success")
-                except:
-                    log_download(url, "Unknown", mode, "Success")
+                filename = ydl.prepare_filename(info) if 'prepare_filename' in dir(ydl) else "Unknown"
+                log_download(url, os.path.basename(filename), mode, "Success")
             
     except Exception as e:
         stop_spinner()
@@ -436,13 +412,9 @@ def change_download_folder():
             
             # Test if directory is writable
             test_file = os.path.join(new_folder, 'test_write.tmp')
-            try:
-                with open(test_file, 'w', encoding='utf-8') as f:
-                    f.write('test')
-                os.remove(test_file)
-            except:
-                print("❌ Cannot write to this directory. Please choose another location.")
-                return
+            with open(test_file, 'w') as f:
+                f.write('test')
+            os.remove(test_file)
             
             DOWNLOAD_DIR = new_folder
             print(f"✅ Download folder changed to: {DOWNLOAD_DIR}")
@@ -489,7 +461,7 @@ def settings_menu(config):
         elif choice == "5":
             confirm = input("🧹 Are you sure you want to clear download history? (y/n): ").lower()
             if confirm == 'y':
-                log_file = os.path.join(BASE_DIR, "download_history.json")
+                log_file = os.path.join(os.path.dirname(CONFIG_FILE), "download_history.json")
                 try:
                     if os.path.exists(log_file):
                         os.remove(log_file)
