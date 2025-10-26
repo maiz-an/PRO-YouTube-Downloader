@@ -6,27 +6,30 @@ import json
 from datetime import datetime
 from yt_dlp import YoutubeDL
 
-# Cross-platform download directory setup
+# Cross-platform base directory setup
 if getattr(sys, 'frozen', False):
     # Running as compiled executable
     BASE_DIR = os.path.dirname(sys.executable)
 else:
-    # Running as script
+    # Running as script (example: Source/Downloader.py)
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# Define Main project root folder (one level up from Source)
+ROOT_DIR = os.path.dirname(BASE_DIR)
 
 # Platform-specific download directory
 if os.name == 'nt':  # Windows
-    DEFAULT_DOWNLOAD_DIR = os.path.join(BASE_DIR, "Downloads")
+    DOWNLOAD_DIR = os.path.join(ROOT_DIR, "Downloads")
 elif sys.platform == 'darwin':  # macOS
-    DEFAULT_DOWNLOAD_DIR = os.path.join(os.path.expanduser("~"), "Downloads", "PRO_Youtube_Downloader")
-else:  # Linux, Android, iOS and others
-    DEFAULT_DOWNLOAD_DIR = BASE_DIR
+    DOWNLOAD_DIR = os.path.join(os.path.expanduser("~"), "Downloads", "PRO_Youtube_Downloader")
+else:  # Linux, Android, iOS, Termux
+    DOWNLOAD_DIR = os.path.join(ROOT_DIR, "Downloads")
 
-DOWNLOAD_DIR = DEFAULT_DOWNLOAD_DIR
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
-# Configuration file path
+# Configuration file path stored inside Source folder
 CONFIG_FILE = os.path.join(BASE_DIR, "downloader_config.json")
+
 
 spinner_running = False
 spinner_thread = None
