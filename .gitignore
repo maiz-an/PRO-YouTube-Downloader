@@ -1,1 +1,6 @@
+# Ignore Downloads folder
 Downloads
+
+# Ignore specific JSON files
+Source/download_history.json
+Source/downloader_config.json
