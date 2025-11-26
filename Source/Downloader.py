@@ -5,6 +5,7 @@ import time
 import json
 from datetime import datetime
 from yt_dlp import YoutubeDL
+import shutil
 
 # Cross-platform base directory setup
 if getattr(sys, 'frozen', False):
@@ -30,6 +31,14 @@ os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 # Configuration file path stored inside Source folder
 CONFIG_FILE = os.path.join(BASE_DIR, "downloader_config.json")
 
+# Resolve ffmpeg executable location: prefer bundled, fall back to system-installed
+BUNDLED_FFMPEG = os.path.join(BASE_DIR, 'ffmpeg-8.0.1', 'bin', 'ffmpeg.exe')
+if os.path.exists(BUNDLED_FFMPEG):
+    FFMPEG_LOCATION = BUNDLED_FFMPEG
+else:
+    system_ffmpeg = shutil.which('ffmpeg')
+    FFMPEG_LOCATION = system_ffmpeg if system_ffmpeg else None
+
 
 spinner_running = False
 spinner_thread = None
@@ -41,7 +50,7 @@ DEFAULT_CONFIG = {
     "enable_logging": True,
     "auto_retry": True,
     "max_retries": 3,
-    "quiet_mode": True
+    "quiet_mode": True,
 }
 
 def load_config():
@@ -390,9 +399,38 @@ def download_content(url, mode, config, retry_count=0):
                 print("─" * 50)
         
         start_spinner()
+        # Ensure yt_dlp uses our resolved ffmpeg executable when available
+        if FFMPEG_LOCATION:
+            ydl_opts['ffmpeg_location'] = FFMPEG_LOCATION
+        else:
+            if not config.get('quiet_mode', True):
+                print("⚠️ ffmpeg not found in project or system. Some features may fail.")
+
         with YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
-            
+
+            # If MP3 mode, remove the original downloaded video files once MP3 exists
+            if mode == "2":
+                try:
+                    def _cleanup_entry(entry):
+                        try:
+                            orig = ydl.prepare_filename(entry)
+                            base = os.path.splitext(orig)[0]
+                            mp3_path = base + '.mp3'
+                            if os.path.exists(mp3_path) and os.path.exists(orig):
+                                os.remove(orig)
+                        except Exception:
+                            pass
+
+                    if isinstance(info, dict) and 'entries' in info and info.get('entries'):
+                        for entry in info.get('entries'):
+                            if entry:
+                                _cleanup_entry(entry)
+                    else:
+                        _cleanup_entry(info)
+                except Exception:
+                    pass
+
             # Log successful download
             if url_info and url_info['type'] == 'playlist':
                 log_download(url, f"Playlist: {url_info['title']} ({mode_text(mode)})", mode, "Success")
