@@ -1,56 +1,67 @@
 import os
 import sys
+import platform
 import threading
 import time
 import json
 from datetime import datetime
 from yt_dlp import YoutubeDL
 import shutil
+from pathlib import Path
 
 # Cross-platform base directory setup
-if getattr(sys, 'frozen', False):
-    # Running as compiled executable
-    BASE_DIR = os.path.dirname(sys.executable)
-else:
-    # Running as script (example: Source/Downloader.py)
-    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-
-# Define Main project root folder (one level up from Source)
-ROOT_DIR = os.path.dirname(BASE_DIR)
+BASE_DIR = Path(__file__).parent
+ROOT_DIR = BASE_DIR.parent
 
 # Platform-specific download directory
 if os.name == 'nt':  # Windows
-    DOWNLOAD_DIR = os.path.join(ROOT_DIR, "Downloads")
+    DOWNLOAD_DIR = ROOT_DIR / "Downloads"
 elif sys.platform == 'darwin':  # macOS
-    DOWNLOAD_DIR = os.path.join(os.path.expanduser("~"), "Downloads", "PRO_Youtube_Downloader")
+    DOWNLOAD_DIR = Path.home() / "Downloads" / "PRO_Youtube_Downloader"
 else:  # Linux, Android, iOS, Termux
-    DOWNLOAD_DIR = os.path.join(ROOT_DIR, "Downloads")
+    DOWNLOAD_DIR = ROOT_DIR / "Downloads"
 
-os.makedirs(DOWNLOAD_DIR, exist_ok=True)
+DOWNLOAD_DIR.mkdir(exist_ok=True)
 
 # Configuration file path stored inside Source folder
-CONFIG_FILE = os.path.join(BASE_DIR, "downloader_config.json")
+CONFIG_FILE = BASE_DIR / "downloader_config.json"
 
-# Resolve ffmpeg executable location: prefer bundled, fall back to system-installed
-BUNDLED_FFMPEG = os.path.join(BASE_DIR, 'ffmpeg-8.0.1', 'bin', 'ffmpeg.exe')
-if os.path.exists(BUNDLED_FFMPEG):
-    FFMPEG_LOCATION = BUNDLED_FFMPEG
-else:
-    system_ffmpeg = shutil.which('ffmpeg')
-    FFMPEG_LOCATION = system_ffmpeg if system_ffmpeg else None
+# FFmpeg setup - using bundled FFmpeg
+def get_ffmpeg_path():
+    """Get bundled FFmpeg path"""
+    system = platform.system().lower()
+    ffmpeg_base = BASE_DIR / "FFmpeg"
+    
+    if system == "windows":
+        ffmpeg_path = ffmpeg_base / "ffmpeg-8.0.1" / "bin" / "ffmpeg.exe"
+    elif system == "darwin":  # macOS
+        ffmpeg_path = ffmpeg_base / "macos" / "ffmpeg"
+    elif system == "linux":
+        ffmpeg_path = ffmpeg_base / "linux" / "ffmpeg"
+    else:
+        ffmpeg_path = ffmpeg_base / "other" / "ffmpeg"
+    
+    # Fallback to system FFmpeg
+    if ffmpeg_path.exists():
+        return str(ffmpeg_path)
+    else:
+        system_ffmpeg = shutil.which('ffmpeg')
+        return system_ffmpeg
 
+FFMPEG_LOCATION = get_ffmpeg_path()
 
 spinner_running = False
 spinner_thread = None
+download_completed_shown = False
 
 # Default configuration
 DEFAULT_CONFIG = {
-    "download_dir": DOWNLOAD_DIR,
+    "download_dir": str(DOWNLOAD_DIR),
     "max_downloads": 5,
     "enable_logging": True,
     "auto_retry": True,
     "max_retries": 3,
-    "quiet_mode": True,
+    "quiet_mode": False,
 }
 
 def load_config():
@@ -70,30 +81,6 @@ def save_config(config):
             json.dump(config, f, indent=4, ensure_ascii=False)
     except Exception:
         pass
-
-def spinner():
-    """Enhanced spinner with progress indication"""
-    phases = ["⏳ Downloading... \\", "⏳ Downloading... |", "⏳ Downloading... /", "⏳ Downloading... -"]
-    idx = 0
-    while spinner_running:
-        sys.stdout.write(f"\r{phases[idx]}")
-        sys.stdout.flush()
-        time.sleep(0.15)
-        idx = (idx + 1) % len(phases)
-
-def start_spinner():
-    global spinner_running, spinner_thread
-    spinner_running = True
-    spinner_thread = threading.Thread(target=spinner)
-    spinner_thread.daemon = True
-    spinner_thread.start()
-
-def stop_spinner():
-    global spinner_running
-    spinner_running = False
-    time.sleep(0.2)
-    sys.stdout.write("\r" + " " * 50 + "\r")
-    sys.stdout.flush()
 
 def clear_screen():
     """Clear the terminal screen - cross-platform"""
@@ -159,7 +146,7 @@ def log_download(url, filename, mode, status="Success"):
             "status": status
         }
         
-        log_file = os.path.join(BASE_DIR, "download_history.json")
+        log_file = BASE_DIR / "download_history.json"
         history = []
         
         if os.path.exists(log_file):
@@ -182,7 +169,7 @@ def log_download(url, filename, mode, status="Success"):
 
 def show_download_history():
     """Display download history"""
-    log_file = os.path.join(BASE_DIR, "download_history.json")
+    log_file = BASE_DIR / "download_history.json"
     
     if not os.path.exists(log_file):
         print("\n❌ No download history found.")
@@ -217,9 +204,10 @@ def show_download_history():
 def get_url_info(url, config):
     """Get video/playlist information without downloading"""
     try:
+        # Use quiet mode to suppress warnings for info fetching
         ydl_opts = {
-            'quiet': config.get('quiet_mode', True),
-            'no_warnings': config.get('quiet_mode', True),
+            'quiet': True,
+            'no_warnings': True,
         }
         
         with YoutubeDL(ydl_opts) as ydl:
@@ -270,20 +258,29 @@ def format_duration(seconds):
 
 def progress_hook(info, config):
     """Enhanced progress hook with detailed information"""
-    if info["status"] == "downloading" and not config.get('quiet_mode', True):
-        # Show download progress if available and not in quiet mode
+    global download_completed_shown
+    
+    if info["status"] == "downloading":
+        # Show download progress
         if '_percent_str' in info:
             percent = info['_percent_str'].strip()
             speed = info.get('_speed_str', 'N/A').strip()
             eta = info.get('_eta_str', 'N/A').strip()
-            sys.stdout.write(f"\r⏳ Downloading... {percent} | Speed: {speed} | ETA: {eta}")
+            total_size = info.get('_total_bytes_str', 'N/A').strip()
+            downloaded = info.get('_downloaded_bytes_str', 'N/A').strip()
+            
+            progress_text = f"\r⏳ Downloading... {percent} | {downloaded}/{total_size} | Speed: {speed} | ETA: {eta}"
+            sys.stdout.write(progress_text)
             sys.stdout.flush()
     
-    elif info["status"] == "finished":
-        stop_spinner()
+    elif info["status"] == "finished" and not download_completed_shown:
+        download_completed_shown = True
         filepath = info.get("filepath", "Unknown")
         
-        if filepath != "Unknown":
+        # Wait a moment to ensure file is fully written
+        time.sleep(0.5)
+        
+        if filepath and filepath != "Unknown" and os.path.exists(filepath):
             filepath = os.path.abspath(filepath)
             filename = os.path.basename(filepath)
             try:
@@ -302,26 +299,30 @@ def progress_hook(info, config):
             print("═" * 55 + "\n")
         else:
             print("\n✅ Download Completed Successfully")
-            print("📂 File saved: Unknown (check download folder)\n")
+            print("📂 File saved in download folder\n")
 
 def download_content(url, mode, config, retry_count=0):
     """Universal download function that handles both single videos and playlists"""
+    global download_completed_shown
+    download_completed_shown = False
     
-    # Base ydl options
+    # Base ydl options - Clean and minimal output
     if mode == "1":
         # Video mode
         ydl_opts = {
-            "outtmpl": os.path.join(DOWNLOAD_DIR, "%(title)s.%(ext)s"),
+            "outtmpl": os.path.join(str(DOWNLOAD_DIR), "%(title)s.%(ext)s"),
             "format": "bestvideo+bestaudio/best",
             "merge_output_format": "mp4",
             "progress_hooks": [lambda info: progress_hook(info, config)],
-            "quiet": config.get('quiet_mode', True),
-            "no_warnings": config.get('quiet_mode', True),
+            "quiet": True,  # Suppress yt-dlp output
+            "no_warnings": True,  # Suppress warnings
+            "noprogress": False,  # We handle progress ourselves
+            "extract_flat": False,
         }
     elif mode == "2":
         # MP3 mode
         ydl_opts = {
-            "outtmpl": os.path.join(DOWNLOAD_DIR, "%(title)s.%(ext)s"),
+            "outtmpl": os.path.join(str(DOWNLOAD_DIR), "%(title)s.%(ext)s"),
             "format": "bestaudio/best",
             "postprocessors": [{
                 "key": "FFmpegExtractAudio",
@@ -329,14 +330,16 @@ def download_content(url, mode, config, retry_count=0):
                 "preferredquality": "320",
             }],
             "progress_hooks": [lambda info: progress_hook(info, config)],
-            "quiet": config.get('quiet_mode', True),
-            "no_warnings": config.get('quiet_mode', True),
+            "quiet": True,  # Suppress yt-dlp output
+            "no_warnings": True,  # Suppress warnings
+            "noprogress": False,  # We handle progress ourselves
+            "extract_flat": False,
         }
     elif mode == "3":
         # Manual format selection
         try:
             print("\n📋 Fetching available formats...")
-            with YoutubeDL({"listformats": True, "quiet": True}) as ydl:
+            with YoutubeDL({"listformats": True, "quiet": True, "no_warnings": True}) as ydl:
                 ydl.download([url])
             print("\n" + "─" * 50)
             fmt = input("🎯 Enter format ID: ").strip()
@@ -345,15 +348,21 @@ def download_content(url, mode, config, retry_count=0):
                 return
             
             ydl_opts = {
-                "outtmpl": os.path.join(DOWNLOAD_DIR, "%(title)s.%(ext)s"),
+                "outtmpl": os.path.join(str(DOWNLOAD_DIR), "%(title)s.%(ext)s"),
                 "format": fmt,
                 "progress_hooks": [lambda info: progress_hook(info, config)],
-                "quiet": config.get('quiet_mode', True),
-                "no_warnings": config.get('quiet_mode', True),
+                "quiet": True,  # Suppress yt-dlp output
+                "no_warnings": True,  # Suppress warnings
+                "noprogress": False,  # We handle progress ourselves
+                "extract_flat": False,
             }
         except Exception as e:
             print(f"❌ Failed to fetch formats: {e}")
             return
+
+    # Add FFmpeg location if available
+    if FFMPEG_LOCATION and os.path.exists(FFMPEG_LOCATION):
+        ydl_opts['ffmpeg_location'] = FFMPEG_LOCATION
 
     try:
         # Show content info before downloading
@@ -376,9 +385,9 @@ def download_content(url, mode, config, retry_count=0):
                 
                 # Update output template for playlists
                 if mode == "1":
-                    ydl_opts["outtmpl"] = os.path.join(DOWNLOAD_DIR, "%(playlist_title)s", "%(title)s.%(ext)s")
+                    ydl_opts["outtmpl"] = os.path.join(str(DOWNLOAD_DIR), "%(playlist_title)s", "%(title)s.%(ext)s")
                 elif mode == "2":
-                    ydl_opts["outtmpl"] = os.path.join(DOWNLOAD_DIR, "%(playlist_title)s", "%(title)s.%(ext)s")
+                    ydl_opts["outtmpl"] = os.path.join(str(DOWNLOAD_DIR), "%(playlist_title)s", "%(title)s.%(ext)s")
                 
                 confirm = input(f"\n🚀 Download {url_info['video_count']} videos as {mode_text(mode).upper()}? (y/n): ").lower().strip()
                 if confirm != 'y':
@@ -398,38 +407,12 @@ def download_content(url, mode, config, retry_count=0):
                 print(f"📥 Mode: {mode_text(mode)}")
                 print("─" * 50)
         
-        start_spinner()
-        # Ensure yt_dlp uses our resolved ffmpeg executable when available
-        if FFMPEG_LOCATION:
-            ydl_opts['ffmpeg_location'] = FFMPEG_LOCATION
-        else:
-            if not config.get('quiet_mode', True):
-                print("⚠️ ffmpeg not found in project or system. Some features may fail.")
-
+        print(f"\n🚀 Starting download...")
+        print("📁 Download location:", DOWNLOAD_DIR)
+        print()  # Empty line before progress starts
+        
         with YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
-
-            # If MP3 mode, remove the original downloaded video files once MP3 exists
-            if mode == "2":
-                try:
-                    def _cleanup_entry(entry):
-                        try:
-                            orig = ydl.prepare_filename(entry)
-                            base = os.path.splitext(orig)[0]
-                            mp3_path = base + '.mp3'
-                            if os.path.exists(mp3_path) and os.path.exists(orig):
-                                os.remove(orig)
-                        except Exception:
-                            pass
-
-                    if isinstance(info, dict) and 'entries' in info and info.get('entries'):
-                        for entry in info.get('entries'):
-                            if entry:
-                                _cleanup_entry(entry)
-                    else:
-                        _cleanup_entry(info)
-                except Exception:
-                    pass
 
             # Log successful download
             if url_info and url_info['type'] == 'playlist':
@@ -442,7 +425,6 @@ def download_content(url, mode, config, retry_count=0):
                     log_download(url, "Unknown", mode, "Success")
             
     except Exception as e:
-        stop_spinner()
         error_msg = str(e)
         print(f"\n❌ Download Error: {error_msg}")
         
@@ -485,12 +467,12 @@ def change_download_folder():
                 print("❌ Cannot write to this directory. Please choose another location.")
                 return
             
-            DOWNLOAD_DIR = new_folder
+            DOWNLOAD_DIR = Path(new_folder)
             print(f"✅ Download folder changed to: {DOWNLOAD_DIR}")
             
             # Update config
             config = load_config()
-            config['download_dir'] = DOWNLOAD_DIR
+            config['download_dir'] = str(DOWNLOAD_DIR)
             save_config(config)
             
         except Exception as e:
@@ -522,7 +504,7 @@ def settings_menu(config):
             status = "enabled" if logging_enabled else "disabled"
             print(f"✅ Logging {status}")
         elif choice == "4":
-            quiet_mode = not config.get('quiet_mode', True)
+            quiet_mode = not config.get('quiet_mode', False)
             config['quiet_mode'] = quiet_mode
             save_config(config)
             status = "enabled" if quiet_mode else "disabled"
@@ -530,7 +512,7 @@ def settings_menu(config):
         elif choice == "5":
             confirm = input("🧹 Are you sure you want to clear download history? (y/n): ").lower()
             if confirm == 'y':
-                log_file = os.path.join(BASE_DIR, "download_history.json")
+                log_file = BASE_DIR / "download_history.json"
                 try:
                     if os.path.exists(log_file):
                         os.remove(log_file)
@@ -548,7 +530,7 @@ def main():
     """Main application function"""
     config = load_config()
     global DOWNLOAD_DIR
-    DOWNLOAD_DIR = config.get('download_dir', DOWNLOAD_DIR)
+    DOWNLOAD_DIR = Path(config.get('download_dir', DOWNLOAD_DIR))
     os.makedirs(DOWNLOAD_DIR, exist_ok=True)
     
     clear_screen()
