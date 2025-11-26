@@ -156,7 +156,7 @@ def setup_ffmpeg():
     ffmpeg_base = Path(__file__).parent / "FFmpeg"
     
     if system == "windows":
-        ffmpeg_path = ffmpeg_base / "ffmpeg-8.0.1" / "bin"
+        ffmpeg_path = ffmpeg_base / "windows" / "ffmpeg" / "bin"  # Fixed path
         ffmpeg_exe = ffmpeg_path / "ffmpeg.exe"
     elif system == "darwin":  # macOS
         ffmpeg_path = ffmpeg_base / "macos"
@@ -264,7 +264,7 @@ def check_system_readiness():
     current_system = platform.system().lower()
     
     if current_system == "windows":
-        ffmpeg_exe = ffmpeg_base / "ffmpeg-8.0.1" / "bin" / "ffmpeg.exe"
+        ffmpeg_exe = ffmpeg_base / "windows" / "ffmpeg" / "bin" / "ffmpeg.exe"  # Fixed path
     else:
         ffmpeg_exe = ffmpeg_base / "ffmpeg"
     

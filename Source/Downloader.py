@@ -33,7 +33,7 @@ def get_ffmpeg_path():
     ffmpeg_base = BASE_DIR / "FFmpeg"
     
     if system == "windows":
-        ffmpeg_path = ffmpeg_base / "ffmpeg-8.0.1" / "bin" / "ffmpeg.exe"
+        ffmpeg_path = ffmpeg_base / "windows" / "ffmpeg" / "bin" / "ffmpeg.exe"  # Fixed path
     elif system == "darwin":  # macOS
         ffmpeg_path = ffmpeg_base / "macos" / "ffmpeg"
     elif system == "linux":
